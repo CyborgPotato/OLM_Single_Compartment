@@ -1,10 +1,14 @@
-neuron = OLM_SingleCompartment_Modified(5000,0.1);
+neuron = OLM_SingleCompartment_Modified(4000,0.1);
 
-neuron.eulerStabilize(2000,0.1)
+neuron.I_stim(:) = 4/neuron.SA;
 
-neuron.I_stim(round(end/5):round(2*end/5)) = 60/neuron.SA*100;
+neuron.eulerStabilize(6000,0.1);
 
-while neuron.eulerStep() % Time stepper returns false once t+1 == nsteps
+neuron.I_stim(1000/0.1+1:1000/0.1+2000/0.1) = neuron.I_stim(1000/0.1+1:1000/0.1+2000/0.1)-120/neuron.SA;
+% neuron.I_stim(1000/0.1+1:1000/0.1+2000/0.1) = neuron.I_stim(1000/0.1+1:1000/0.1+2000/0.1)-120/100;
+% neuron.I_stim(1000/0.01+1:1000/0.01+2000/0.01) = neuron.I_stim(1000/0.01+1:1000/0.01+2000/0.01)+60/100;
+
+while neuron.eulerStep() % Time stepper returns false once t == nsteps
     
 end
 

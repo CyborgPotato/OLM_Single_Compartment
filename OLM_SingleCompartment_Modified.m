@@ -1,6 +1,6 @@
 classdef OLM_SingleCompartment_Modified < handle
-    %OLM_SINGLECOMPARTMENT_MODIFIED Oriens-Lacunosum/Moleculare Single
-    %Compartment model
+%OLM_SINGLECOMPARTMENT_MODIFIED Oriens-Lacunosum/Moleculare Single
+%Compartment model
     
     properties
         %% Time dependent variables
@@ -55,10 +55,76 @@ classdef OLM_SingleCompartment_Modified < handle
         V_12
     end
     
+    methods (Access=protected)
+        %% I_NaT related ODEs
+        function m = mdt_NaT(p,V,m1)
+            am = -0.1*(V+38-p.V_Shift);
+            am = am/(exp(-(V+38-p.V_Shift)/10)-1);
+            bm = 4*exp(-(V+63-p.V_Shift)/18);
+            
+            m = am*(1-m1)-bm*m1;
+        end
+        function h = hdt_NaT(p,V,h1)
+            ah = 0.07*exp(-(V+63-p.V_Shift)/20);
+            bh = 1/( 1 + exp(-(V+33-p.V_Shift)/10));
+            
+            h = ah*(1-h1)-bh*h1;
+        end
+        %% I_Kdrf related ODEs
+        function m = mdt_Kdrf(p,V,m1)
+            minf = (1/(1+exp(-(V+36.2)/16.1)))^4;
+            taum = 27.8*exp((V+33)/14.3);
+            taum = taum/(p.qt*(1+exp((V+33)/10)));
+            
+            m = (minf-m1)/taum;
+        end
+        function h = hdt_Kdrf(p,V,h1)
+            hinf = (0.92)/(1+exp((V+40.6)/7.8))+0.08;
+            tauh = 1000;
+            
+            h = (hinf-h1)/tauh;
+        end
+        %% I_KA related ODEs
+        function m = mdt_KA(p,V,m1)
+            minf = (1/(1+exp(-(V+41.4)/26.6)))^4;
+            taum = 0.5/p.qt;
+            
+            m = (minf-m1)/taum;
+        end
+        function h = hdt_KA(p,V,h1)
+            hinf = 1/(1+exp((V+78.5)/6));
+            tauh = 0.17*(V+105)/p.qt;
+            
+            h = (hinf-h1)/tauh;
+        end
+        %% I_M Related ODEs
+        function m = mdt_M(p,V,m1)
+            minf = 1/(1+exp(-(V+27)/7));
+            taum = 1/(0.003*(1/exp(-(V+63)/15)+1/...
+                             exp((V+63)/15)));
+            
+            m = (minf-m1)/taum;
+        end
+        %% I_H Related ODEs
+        function r = rdt_H(p,V,r1)
+            rinf = 1/(1+exp((V-p.V_12)/p.k));
+            tauh = 1/(exp(-p.t1-p.t2*V)+...
+                      exp(-p.t3+p.t4*V))+p.t5;
+            
+            r = (rinf-r1)/tauh;
+        end
+        %% Membrane Voltage ODE
+        function v = Vdt(p)
+            v = (-p.I_NaT(p.t)-p.I_Kdrf(p.t) - ...
+                 p.I_KA(p.t)-p.I_M(p.t)-p.I_H(p.t) - ...
+                 p.I_L(p.t)+p.I_stim(p.t))/p.C_m;
+        end
+    end    
+    
     methods
         function p = OLM_SingleCompartment_Modified(tstop,dt)
-            %OLM_SINGLECOMPARTMENT_MODIFIED constructor, based on modified
-            %OLM model -- tstop and dt units are milliseconds
+        %OLM_SINGLECOMPARTMENT_MODIFIED constructor, based on modified
+        %OLM model -- tstop and dt units are milliseconds
             
             %% Allocate tiem dependent variables
             p.nsteps = tstop/dt+1; % Number of time steps to calculate
@@ -113,80 +179,118 @@ classdef OLM_SingleCompartment_Modified < handle
         end
         
         function running = eulerStep(p)
-            % Numerically intergrates one time step via Forward Euler
-            % Use function in a while loop, allowing for interaction with
-            % the model as it evolves, such as applying a Kalman filter
-            % dynamically to a model
+        % Numerically intergrates one time step via Forward Euler
+        % Use function in a while loop, allowing for interaction with
+        % the model as it evolves, such as applying a Kalman filter
+        % dynamically to a model
             running = true;
             
             % Step through each current before stepping membrane voltage
             %% I_NaT ODE
              % dm/dt
-            am = -0.1*(p.V(p.t)+38-p.V_Shift);
-            am = am/(exp(-(p.V(p.t)+38-p.V_Shift)/10)-1);
-            bm = 4*exp(-(p.V(p.t)+63-p.V_Shift)/18);
-            p.m_NaT(p.t+1) = p.m_NaT(p.t)+(am*(1-p.m_NaT(p.t))-bm*p.m_NaT(p.t))*p.dt;
+            p.m_NaT(p.t+1) = p.m_NaT(p.t)+mdt_NaT(p,p.V(p.t),p.m_NaT(p.t))*p.dt;
              % dh/dt
-            ah = 0.07*exp(-(p.V(p.t)+63-p.V_Shift)/20);
-            bh = 1/( 1 + exp(-(p.V(p.t)+33-p.V_Shift)/10));
-            p.h_NaT(p.t+1) = p.h_NaT(p.t)+(ah*(1-p.h_NaT(p.t))-bh*p.h_NaT(p.t))*p.dt;
+             p.h_NaT(p.t+1) = p.h_NaT(p.t)+hdt_NaT(p,p.V(p.t),p.h_NaT(p.t))*p.dt;
              % I_NaT
             p.I_NaT(p.t) = p.G_NaT*p.m_NaT(p.t)^3*p.h_NaT(p.t)*(p.V(p.t)-p.E_Na);
             %% I_Kdrf ODE
              % dm/dt
-            minf = (1/(1+exp(-(p.V(p.t)+36.2)/16.1)))^4;
-            taum = 27.7*exp((p.V(p.t)+33)/14.3);
-            taum = taum/(p.qt*(1+exp((p.V(p.t)+33)/10)));
-            p.m_Kdrf(p.t+1) = p.m_Kdrf(p.t)+(minf-p.m_Kdrf(p.t))/taum*p.dt;
+            p.m_Kdrf(p.t+1) = p.m_Kdrf(p.t)+mdt_Kdrf(p,p.V(p.t),p.m_Kdrf(p.t))*p.dt;
              % dh/dt
-            hinf = (0.92)/(1+exp((p.V(p.t)+40.6)/7.8))+0.08;
-            tauh = 1000;
-            p.h_Kdrf(p.t+1) = p.h_Kdrf(p.t)+(hinf-p.h_Kdrf(p.t))/tauh*p.dt;
+             p.h_Kdrf(p.t+1) = p.h_Kdrf(p.t)+hdt_Kdrf(p,p.V(p.t),p.h_Kdrf(p.t))*p.dt;
              % I_Kdrf
             p.I_Kdrf(p.t) = p.G_Kdrf*p.m_Kdrf(p.t)*p.h_Kdrf(p.t)*(p.V(p.t)-p.E_K);
             %% I_KA ODE
              % dm/dt
-            minf = (1/(1+exp(-(p.V(p.t)+41.4)/26.6)))^4;
-            taum = 0.5/p.qt;
-            p.m_KA(p.t+1) = p.m_KA(p.t)+(minf-p.m_KA(p.t))/taum*p.dt;
+            p.m_KA(p.t+1) = p.m_KA(p.t)+ mdt_KA(p,p.V(p.t),p.m_KA(p.t))*p.dt;
              % dh/dt
-            hinf = 1/(1+exp((p.V(p.t)+78.5)/6));
-            tauh = 0.17*(p.V(p.t)+105)/p.qt;
-            p.h_KA(p.t+1) = p.h_KA(p.t) + (hinf-p.h_KA(p.t))/tauh*p.dt;
+             p.h_KA(p.t+1) = p.h_KA(p.t) + hdt_KA(p,p.V(p.t),p.h_KA(p.t))*p.dt;
              % I_KA
             p.I_KA(p.t) = p.G_KA*p.m_KA(p.t)*p.h_KA(p.t)*(p.V(p.t)-p.E_K);
             %% I_M ODE
              % dm/dt
-            minf = 1/(1+exp(-(p.V(p.t)+27)/7));
-            taum = 1/(0.003*(1/exp(-(p.V(p.t)+63)/15)+1/exp((p.V(p.t)+63)/15)));
-            p.m_M(p.t+1) = p.m_M(p.t) + (minf-p.m_M(p.t))/taum*p.dt;
+            p.m_M(p.t+1) = p.m_M(p.t) + mdt_M(p,p.V(p.t),p.m_M(p.t))*p.dt;
              % I_M
             p.I_M(p.t) = p.G_M*p.m_M(p.t)*(p.V(p.t)-p.E_K);
             %% I_H ODE
              % dr/dt
-            rinf = 1/(1+exp((p.V(p.t)-p.V_12)/p.k));
-            tauh = 1/(exp(-p.t1-p.t2*p.V(p.t))+exp(-p.t3+p.t4*p.V(p.t)))+p.t5;
-            p.r_H(p.t+1) = p.r_H(p.t) + (rinf-p.r_H(p.t))/tauh*p.dt;
+            p.r_H(p.t+1) = p.r_H(p.t) + rdt_H(p,p.V(p.t),p.r_H(p.t))*p.dt;
              % I_H
             p.I_H(p.t) = p.G_H*p.r_H(p.t)*(p.V(p.t)-p.E_h);
-            %% I_L ODE
+            %% I_L
             p.I_L(p.t) = p.G_L*(p.V(p.t)-p.E_L);
             %% Membrane Voltage ODE
-            p.V(p.t+1) = p.V(p.t) + ...
-                (-p.I_NaT(p.t)-p.I_Kdrf(p.t) - ...
-                p.I_KA(p.t)-p.I_M(p.t)-p.I_H(p.t) - ...
-                p.I_L(p.t)+p.I_stim(p.t))/p.C_m*p.dt;
+            p.V(p.t+1) = p.V(p.t) + Vdt(p)*p.dt;
             
             p.t = p.t+1;
             if (p.t == p.nsteps)
                 running = false;
             end
-            return
+        end
+        
+        function running = rk4Step(p)
+            running = true;
+            %% Calculate k1 terms of all ODEs
+            % I_NaT ODE
+             % dm/dt
+            k1_mNaT = mdt_NaT(p,p.V(p.t),p.m_NaT(p.t));
+             % dh/dt
+            k1_hNaT = hdt_NaT(p,p.V(p.t),p.h_NaT(p.t));
+            % I_Kdrf ODE
+             % dm/dt
+            k1_mKdrf = mdt_Kdrf(p,p.V(p.t),p.m_Kdrf(p.t));
+             % dh/dt
+            k1_hKdrf = hdt_Kdrf(p,p.V(p.t),p.h_Kdrf(p.t));
+            % I_KA ODE
+             % dm/dt
+            k1_mKA = mdt_KA(p,p.V(p.t),p.m_KA(p.t));
+             % dh/dt
+            k1_hKA = hdt_KA(p,p.V(p.t),p.h_KA(p.t));
+            % I_M ODE
+             % dm/dt
+            k1_mM = mdt_M(p,p.V(p.t),p.m_M(p.t));
+            % I_H ODE
+             % dr/dt
+            k1_rH = rdt_H(p,p.V(p.t),p.r_H(p.t));
+            % Voltage Membrane ODE
+            %% TODO:Implement current dt to allow for step by step RK4
+            k1_V = Vdt(p);
+            %% Calculate k2 terms of all ODEs
+            % I_NaT ODE
+             % dm/dt
+            k2_mNaT = mdt_NaT(p,p.V(p.t)+0.5*k1_V,p.m_NaT(p.t)+k1_mNaT);
+             % dh/dt
+            k2_hNaT = hdt_NaT(p,p.V(p.t)+0.5*k1_V,p.h_NaT(p.t)+k1_hNaT);
+            % I_Kdrf ODE
+             % dm/dt
+            k2_mKdrf = mdt_Kdrf(p,p.V(p.t)+0.5*k1_V,p.m_Kdrf(p.t)+k1_mKdrf);
+             % dh/dt
+            k2_hKdrf = hdt_Kdrf(p,p.V(p.t)+0.5*k1_V,p.h_Kdrf(p.t)+k1_hKdrf);
+            % I_KA ODE
+             % dm/dt
+            k2_mKA = mdt_KA(p,p.V(p.t)+0.5*k1_V,p.m_KA(p.t)+k1_mKA);
+             % dh/dt
+            k2_hKA = hdt_KA(p,p.V(p.t)+0.5*k1_V,p.h_KA(p.t)+k1_hKA);
+            % I_M ODE
+             % dm/dt
+            k2_mM = mdt_M(p,p.V(p.t)+0.5*k1_V,p.m_M(p.t)+k1_mM);
+            % I_H ODE
+             % dr/dt
+            k2_rH = rdt_H(p,p.V(p.t)+0.5*k1_V,p.r_H(p.t)+k1_rH);
+            % Voltage Membrane ODE
+            k2_V = Vdt(p);
+            
+            %% Forward time step
+            p.t = p.t+1;
+            if (p.t == p.nsteps)
+                running = false;
+            end
         end
         
         function [] = eulerStabilize(p,tstop,dt)
             s = OLM_SingleCompartment_Modified(tstop,dt);
             s.V(1)=-80;
+            s.I_stim(:) = p.I_stim(1);
             %% Copy all properties of p to s
             %%Set Conductance values, units: pS/μm^2
             s.G_NaT = p.G_NaT;
