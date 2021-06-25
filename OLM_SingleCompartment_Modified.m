@@ -156,7 +156,7 @@ classdef OLM_SingleCompartment_Modified < handle
             p.G_pas = 0.075833;
             %% Set Reversal potentials etc.
             p.E_Na = 90; % mV
-            p.E_K = -96; % mV
+            p.E_K = -95; % mV
             p.E_L = -64.6; % mV
             p.E_pas = -64.6; % mV
             p.E_h = -34.0056; % mV
