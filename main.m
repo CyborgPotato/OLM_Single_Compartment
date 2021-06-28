@@ -1,15 +1,24 @@
-neuron = OLM_SingleCompartment_Modified(4000,0.1);
+dt = 0.01;
 
-neuron.I_stim(:) = 4/neuron.SA;
+neuron = OLM_SingleCompartment_Modified(4000,dt);
 
+neuron.I_stim(:) = 4/100;
 neuron.eulerStabilize(6000,0.1);
 
-neuron.I_stim(1000/0.1+1:1000/0.1+2000/0.1) = neuron.I_stim(1000/0.1+1:1000/0.1+2000/0.1)-120/neuron.SA;
-% neuron.I_stim(1000/0.1+1:1000/0.1+2000/0.1) = neuron.I_stim(1000/0.1+1:1000/0.1+2000/0.1)-120/100;
-% neuron.I_stim(1000/0.01+1:1000/0.01+2000/0.01) = neuron.I_stim(1000/0.01+1:1000/0.01+2000/0.01)+60/100;
-
+neuron.I_stim(1000/dt+1:1000/dt+2000/dt) = neuron.I_stim(1000/dt+1:1000/dt+2000/dt)-120/100;
+prg = waitbar(0,'Running Simulation');
 while neuron.eulerStep() % Time stepper returns false once t == nsteps
-    
+    if (mod(neuron.t,round(neuron.nsteps/25))==0)
+        waitbar(neuron.t/neuron.nsteps,prg);
+    end
 end
+close(prg);
+plot(neuron.V);
+% hold on
+% plot(1:length(neuron.V),neuron.V);
+% NEURON = fopen('0.03pA.txt','r');
+% V = fscanf(NEURON,'%f');
+% plot(V);
+% fclose(NEURON);
+% hold off
 
-plot(1:neuron.nsteps,neuron.V)
