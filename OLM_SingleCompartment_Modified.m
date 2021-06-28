@@ -19,6 +19,7 @@ classdef OLM_SingleCompartment_Modified < handle
         r_H
         I_L
         I_stim % modified after creation for arbitrary stimulus
+        stim = 0; % ode45 stim, only step current
         t % Current timestep
         dt
         nsteps % number of timesteps
@@ -134,6 +135,29 @@ classdef OLM_SingleCompartment_Modified < handle
         function v = Vdt(p,I_NaT,I_Kdrf,I_KA,I_M,I_H,I_L)
             v = (-I_NaT-I_Kdrf-I_KA-I_M-I_H-I_L+p.I_stim(p.t))/p.C_m;
         end
+        
+        function dydt = ode45_dydt(p,t,y)
+            %Temporary false stim mimiccing 2 second stim from 1-3
+            STIM = 4/100;
+            if (t>=1000 && t<=3000)
+               STIM = 4/100 + p.stim; 
+            end
+            dydt = [(-(p.G_NaT*(y(2)^3)*y(3)*(y(1)-p.E_Na))...
+                       -(p.G_Kdrf*y(4)*y(5)*(y(1)-p.E_K))...
+                       -(p.G_KA*y(6)*y(7)*(y(1)-p.E_K))...
+                       -(p.G_M*y(8)*(y(1)-p.E_K))...
+                       -(p.G_H*y(9)*(y(1)-p.E_h))...
+                       -(p.G_L*(y(1)-p.E_L))...
+                       +STIM)/p.C_m;
+                       mdt_NaT(p,y(1),y(2));
+                       hdt_NaT(p,y(1),y(3));
+                       mdt_Kdrf(p,y(1),y(4));
+                       hdt_Kdrf(p,y(1),y(5));
+                       mdt_KA(p,y(1),y(6));
+                       hdt_KA(p,y(1),y(7));
+                       mdt_M(p,y(1),y(8));
+                       rdt_H(p,y(1),y(9));];
+        end
     end    
     
     methods (Static)
@@ -179,28 +203,27 @@ classdef OLM_SingleCompartment_Modified < handle
             warning('off','');
             t = p.t; %#ok<*PROP> % ease of reference to current timestep
             dt = p.dt; % ease of reference to stepsize
-            
             V = p.V(p.t); % ease of reference to current voltage
             
             % Step through each current before stepping membrane voltage
             %% I_NaT ODE
             p.m_NaT(t+1) = p.lin(p.m_NaT(t),mdt_NaT(p,V,p.m_NaT(t)),dt);
             p.h_NaT(t+1) = p.lin(p.h_NaT(t),hdt_NaT(p,V,p.h_NaT(t)),dt);
-            p.I_NaT(t) = Na(p,V,p.m_NaT(t),p.h_NaT(t));
+            p.I_NaT(t+1) = Na(p,V,p.m_NaT(t),p.h_NaT(t));
             %% I_Kdrf ODE
             p.m_Kdrf(t+1) = p.lin(p.m_Kdrf(t),mdt_Kdrf(p,V,p.m_Kdrf(t)),dt);
             p.h_Kdrf(t+1) = p.lin(p.h_Kdrf(t),hdt_Kdrf(p,V,p.h_Kdrf(t)),dt);
-            p.I_Kdrf(t) = Kdrf(p,V,p.m_Kdrf(t),p.h_Kdrf(t));
+            p.I_Kdrf(t+1) = Kdrf(p,V,p.m_Kdrf(t),p.h_Kdrf(t));
             %% I_KA ODE
             p.m_KA(t+1) = p.lin(p.m_KA(t),mdt_KA(p,V,p.m_KA(t)),dt);
             p.h_KA(t+1) = p.lin(p.h_KA(t),hdt_KA(p,V,p.h_KA(t)),dt);
-            p.I_KA(t) = KA(p,V,p.m_KA(t),p.h_KA(t));
+            p.I_KA(t+1) = KA(p,V,p.m_KA(t),p.h_KA(t));
             %% I_M ODE
             p.m_M(t+1) = p.lin(p.m_M(t),mdt_M(p,V,p.m_M(t)),dt);
-            p.I_M(t) = M(p,V,p.m_M(t));
+            p.I_M(t+1) = M(p,V,p.m_M(t));
             %% I_H ODE
             p.r_H(t+1) = p.lin(p.r_H(t),rdt_H(p,V,p.r_H(t)),dt);
-            p.I_H(t) = H(p,V,p.r_H(t));
+            p.I_H(t+1) = H(p,V,p.r_H(t));
             %% I_L
             p.I_L(t+1) = L(p,V);
             %% Membrane Voltage ODE
@@ -273,6 +296,15 @@ classdef OLM_SingleCompartment_Modified < handle
             if (p.t == p.nsteps)
                 running = false;
             end
+        end
+        
+        function res = ode45Step(p)
+        % Euler does not seem to be sufficient, so for now we shall
+        % attempt to use ode45
+        [~,res] = ode45(@p.ode45_dydt,0:0.1:4000,[-76,0,0,0,0,0,0,0,0]);
+        
+%         p.V = res(1);
+        
         end
         
         function [] = eulerStabilize(p,tstop,dt)
